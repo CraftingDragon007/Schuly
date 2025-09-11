@@ -15,6 +15,7 @@ import 'services/push_notification_service.dart';
 import 'widgets/homepage_config_modal.dart';
 import 'widgets/release_notes_dialog.dart';
 import 'widgets/app_update_dialog.dart';
+import 'widgets/comprehensive_permission_modal.dart';
 import 'package:schuly/api/lib/api.dart';
 
 String apiBaseUrl = 'https://schulware.pianonic.ch';
@@ -124,7 +125,57 @@ class _MyHomePageState extends State<MyHomePage> {
       if (context.mounted) {
         await ReleaseNotesDialog.showIfNeeded(context);
       }
+      
+      // Show comprehensive permission modal if needed
+      if (context.mounted) {
+        await _showComprehensivePermissionsIfNeeded();
+      }
     });
+  }
+
+  Future<void> _showComprehensivePermissionsIfNeeded() async {
+    // Check if we should show the comprehensive permission modal
+    final showPermissionModal = await _shouldShowPermissionModal();
+    
+    if (showPermissionModal && context.mounted) {
+      await showDialog(
+        context: context,
+        barrierDismissible: false, // Force user interaction
+        builder: (context) => const ComprehensivePermissionModal(),
+      );
+    }
+  }
+
+  Future<bool> _shouldShowPermissionModal() async {
+    // Check if basic notification permissions are granted
+    final permissionsGranted = await PushNotificationService.arePermissionsGranted();
+    
+    // If basic permissions are missing, definitely show the modal
+    if (!permissionsGranted) {
+      return true;
+    }
+
+    // Check if user has any notification types enabled but permissions might be incomplete
+    final agendaEnabled = await StorageService.getNotificationEnabled('agenda') ?? true;
+    final gradesEnabled = await StorageService.getNotificationEnabled('grades') ?? false;
+    final absencesEnabled = await StorageService.getNotificationEnabled('absences') ?? false;
+    
+    // If user has notifications enabled, they might benefit from the comprehensive modal
+    // But only show it occasionally to avoid being annoying
+    if (agendaEnabled || gradesEnabled || absencesEnabled) {
+      // Check if we've shown this modal recently (store a timestamp)
+      final lastShown = await StorageService.getLastPermissionModalShown();
+      final now = DateTime.now();
+      
+      // Show modal if never shown or if it's been more than 7 days
+      if (lastShown == null || now.difference(lastShown).inDays > 7) {
+        // Store that we're about to show it
+        await StorageService.setLastPermissionModalShown(now);
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   // 2. _onItemTapped is simplified

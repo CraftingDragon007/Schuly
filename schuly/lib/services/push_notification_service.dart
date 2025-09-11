@@ -98,7 +98,29 @@ class PushNotificationService {
     if (!_initialized) await initialize();
 
     if (Platform.isAndroid) {
+      // Request notification permission
       final androidPermission = await Permission.notification.request();
+      if (!androidPermission.isGranted) {
+        return false;
+      }
+
+      // Also request exact alarm permission for Android 12+ (API 31+)
+      // This is crucial for scheduled notifications to work reliably
+      try {
+        final exactAlarmPermission = await Permission.scheduleExactAlarm.request();
+        debugPrint('Exact alarm permission: $exactAlarmPermission');
+      } catch (e) {
+        debugPrint('Exact alarm permission not available or failed: $e');
+      }
+
+      // Request to ignore battery optimization for better notification reliability
+      try {
+        final batteryOptimization = await Permission.ignoreBatteryOptimizations.request();
+        debugPrint('Battery optimization permission: $batteryOptimization');
+      } catch (e) {
+        debugPrint('Battery optimization permission not available or failed: $e');
+      }
+
       return androidPermission.isGranted;
     } else if (Platform.isIOS) {
       final result = await _notifications
@@ -188,6 +210,13 @@ class PushNotificationService {
       icon: '@mipmap/ic_launcher',
       category: AndroidNotificationCategory.alarm,
       timeoutAfter: 30000, // Show for 30 seconds
+      fullScreenIntent: true, // Show on lock screen
+      showWhen: true,
+      when: notificationTime.millisecondsSinceEpoch,
+      usesChronometer: false,
+      autoCancel: false, // Don't auto-cancel to keep visible longer
+      ongoing: false,
+      visibility: NotificationVisibility.public, // Show on lock screen
     );
 
     const iosDetails = DarwinNotificationDetails(
@@ -204,18 +233,26 @@ class PushNotificationService {
     final title = 'Nächste Stunde: $subject';
     final body = 'Raum: $room${teacher.isNotEmpty ? ' • Lehrer: $teacher' : ''}';
 
-    await _notifications.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(notificationTime, tz.local),
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    try {
+      await _notifications.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(notificationTime, tz.local),
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
 
-    debugPrint('Scheduled notification for $subject at ${notificationTime.toString()}');
+      debugPrint('✅ Scheduled notification for $subject at ${notificationTime.toString()}');
+      debugPrint('   📱 Notification ID: $id');
+      debugPrint('   ⏰ Current time: ${DateTime.now()}');
+      debugPrint('   🔔 Scheduled time: $notificationTime');
+      debugPrint('   ⏱️  Minutes until notification: ${notificationTime.difference(DateTime.now()).inMinutes}');
+    } catch (e) {
+      debugPrint('❌ Failed to schedule notification for $subject: $e');
+    }
   }
 
   // Schedule notifications for multiple agenda items

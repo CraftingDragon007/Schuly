@@ -11,6 +11,7 @@ import 'notification_config_page.dart';
 import 'release_notes_page.dart';
 import '../services/app_update_service.dart';
 import '../widgets/app_update_dialog.dart';
+import '../widgets/comprehensive_permission_modal.dart';
 
 class AppSettingsPage extends StatefulWidget {
   final ThemeProvider themeProvider;
@@ -21,7 +22,7 @@ class AppSettingsPage extends StatefulWidget {
   State<AppSettingsPage> createState() => _AppSettingsPageState();
 }
 
-class _AppSettingsPageState extends State<AppSettingsPage> {
+class _AppSettingsPageState extends State<AppSettingsPage> with WidgetsBindingObserver {
   bool _pushNotificationsEnabled = false;
   bool _isLoading = true;
   bool _isCheckingUpdates = false;
@@ -31,9 +32,26 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
     _loadApiInfo();
     _loadAppVersion();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Refresh permission status when app comes back from background
+    // This helps if user went to system settings to enable permissions
+    if (state == AppLifecycleState.resumed) {
+      _loadSettings();
+    }
   }
 
   Future<void> _loadApiInfo() async {
@@ -60,23 +78,119 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   Future<void> _loadSettings() async {
     final pushNotificationsEnabled = await StorageService.getPushNotificationsEnabled();
     
+    // Check if permissions are actually granted
+    final permissionsGranted = await PushNotificationService.arePermissionsGranted();
+    
+    // Force toggle off if permissions are not granted, regardless of stored setting
+    final actualNotificationsEnabled = pushNotificationsEnabled && permissionsGranted;
+    
+    // If stored setting says enabled but permissions not granted, update storage
+    if (pushNotificationsEnabled && !permissionsGranted) {
+      await StorageService.setPushNotificationsEnabled(false);
+    }
+    
     setState(() {
-      _pushNotificationsEnabled = pushNotificationsEnabled;
+      _pushNotificationsEnabled = actualNotificationsEnabled;
       _isLoading = false;
     });
   }
 
   Future<void> _togglePushNotifications(bool value) async {
-    setState(() {
-      _pushNotificationsEnabled = value;
-    });
-    
-    await StorageService.setPushNotificationsEnabled(value);
-    
-    // If disabling push notifications, cancel all notifications
-    if (!value) {
+    if (value) {
+      // User wants to enable notifications - check permissions first
+      final permissionsGranted = await PushNotificationService.arePermissionsGranted();
+      
+      if (!permissionsGranted) {
+        // Show permission prompt
+        final shouldRequestPermission = await _showPermissionDialog();
+        
+        if (shouldRequestPermission) {
+          // Request permissions
+          final granted = await PushNotificationService.requestPermissions();
+          
+          if (granted) {
+            // Permissions granted, enable notifications
+            setState(() {
+              _pushNotificationsEnabled = true;
+            });
+            await StorageService.setPushNotificationsEnabled(true);
+            
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Benachrichtigungen wurden aktiviert!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } else {
+            // Permissions denied, keep toggle off and show message
+            setState(() {
+              _pushNotificationsEnabled = false;
+            });
+            
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Benachrichtigungen können nicht aktiviert werden. Überprüfen Sie die Geräte-Einstellungen.'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+          }
+        } else {
+          // User dismissed permission dialog, keep toggle off
+          setState(() {
+            _pushNotificationsEnabled = false;
+          });
+        }
+      } else {
+        // Permissions already granted, just enable
+        setState(() {
+          _pushNotificationsEnabled = true;
+        });
+        await StorageService.setPushNotificationsEnabled(true);
+      }
+    } else {
+      // User wants to disable notifications
+      setState(() {
+        _pushNotificationsEnabled = false;
+      });
+      await StorageService.setPushNotificationsEnabled(false);
+      
+      // Cancel all notifications when disabling
       await PushNotificationService.cancelAllNotifications();
     }
+  }
+
+  Future<bool> _showPermissionDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Benachrichtigungen aktivieren'),
+        content: const Text(
+          'Um Push-Benachrichtigungen zu aktivieren, müssen Sie der App Berechtigung gewähren.\n\n'
+          'Dies ist erforderlich für:\n'
+          '• Benachrichtigungen über bevorstehende Lektionen\n'
+          '• Neue Noten und Absenzen\n'
+          '• Wichtige Schulinformationen\n\n'
+          'Möchten Sie die Berechtigung erteilen?'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Berechtigung erteilen'),
+          ),
+        ],
+      ),
+    );
+    
+    return result ?? false;
   }
 
   Future<void> _checkForUpdates() async {
@@ -204,6 +318,26 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                             } : null,
                             isEnabled: _pushNotificationsEnabled,
                           ),
+
+                    const Divider(),
+
+                    // Comprehensive Permission Check
+                    _buildSettingsTile(
+                      context,
+                      icon: Icons.security_outlined,
+                      title: 'Berechtigungen optimieren',
+                      subtitle: 'Alle Berechtigungen prüfen und für beste Erfahrung konfigurieren',
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        await showDialog(
+                          context: context,
+                          builder: (context) => const ComprehensivePermissionModal(),
+                        );
+                        // Reload settings after modal closes
+                        _loadSettings();
+                      },
+                      isEnabled: true,
+                    ),
 
                     const Divider(),
 

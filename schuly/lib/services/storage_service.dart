@@ -97,4 +97,17 @@ class StorageService {
   static Future<void> clearAll() async {
     await _storage.deleteAll();
   }
+
+  // Permission modal tracking
+  static const String _lastPermissionModalShownKey = 'last_permission_modal_shown';
+  
+  static Future<DateTime?> getLastPermissionModalShown() async {
+    final value = await _storage.read(key: _lastPermissionModalShownKey);
+    if (value == null) return null;
+    return DateTime.tryParse(value);
+  }
+  
+  static Future<void> setLastPermissionModalShown(DateTime dateTime) async {
+    await _storage.write(key: _lastPermissionModalShownKey, value: dateTime.toIso8601String());
+  }
 }
