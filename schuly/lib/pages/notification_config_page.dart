@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/push_notification_service.dart';
 import '../services/storage_service.dart';
+import '../providers/api_store.dart';
 
 class NotificationConfigPage extends StatefulWidget {
   const NotificationConfigPage({super.key});
@@ -45,10 +47,19 @@ class _NotificationConfigPageState extends State<NotificationConfigPage> {
 
   Future<void> _saveNotificationSetting(String type, bool enabled) async {
     await StorageService.setNotificationEnabled(type, enabled);
-    
-    // If this is agenda notifications and it's being disabled, cancel all notifications
-    if (type == 'agenda' && !enabled) {
-      await PushNotificationService.cancelAllNotifications();
+
+    if (!mounted) return;
+    final apiStore = Provider.of<ApiStore>(context, listen: false);
+
+    // If this is agenda notifications being changed, reschedule notifications
+    if (type == 'agenda') {
+      if (!enabled) {
+        // Cancel all notifications if disabled
+        await PushNotificationService.cancelAllNotifications();
+      } else {
+        // Reschedule notifications if enabled (from cached data)
+        await apiStore.rescheduleNotifications();
+      }
     }
   }
 
@@ -57,6 +68,11 @@ class _NotificationConfigPageState extends State<NotificationConfigPage> {
     setState(() {
       _advanceMinutes = minutes;
     });
+
+    // Reschedule notifications with new advance time
+    if (!mounted) return;
+    final apiStore = Provider.of<ApiStore>(context, listen: false);
+    await apiStore.rescheduleNotifications();
   }
 
 
@@ -194,29 +210,39 @@ class _NotificationConfigPageState extends State<NotificationConfigPage> {
                             const SizedBox(height: 16),
 
                             // Advance Time Selection
-                            Wrap(
-                              spacing: 8.0,
-                              runSpacing: 8.0,
-                              children: _advanceTimeOptions.map((minutes) {
-                                final isSelected = _advanceMinutes == minutes;
-                                return FilterChip(
-                                  label: Text('$minutes Min'),
-                                  selected: isSelected,
-                                  onSelected: (selected) {
-                                    if (selected) {
-                                      _saveAdvanceTime(minutes);
-                                    }
-                                  },
-                                  selectedColor: Theme.of(context).colorScheme.primaryContainer,
-                                  checkmarkColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                return Wrap(
+                                  spacing: 8.0,
+                                  runSpacing: 8.0,
+                                  children: _advanceTimeOptions.map((minutes) {
+                                    final isSelected = _advanceMinutes == minutes;
+                                    return ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: (constraints.maxWidth - 16) / 3, // 3 chips per row max
+                                      ),
+                                      child: FilterChip(
+                                        label: Text('$minutes Min'),
+                                        selected: isSelected,
+                                        onSelected: (selected) {
+                                          if (selected) {
+                                            _saveAdvanceTime(minutes);
+                                          }
+                                        },
+                                        selectedColor: Theme.of(context).colorScheme.primaryContainer,
+                                        checkmarkColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                                      ),
+                                    );
+                                  }).toList(),
                                 );
-                              }).toList(),
+                              },
                             ),
 
                             const SizedBox(height: 16),
 
                             // Current Selection Display
                             Container(
+                              width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
@@ -226,6 +252,7 @@ class _NotificationConfigPageState extends State<NotificationConfigPage> {
                                 ),
                               ),
                               child: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
                                     Icons.access_time_outlined,
@@ -237,6 +264,8 @@ class _NotificationConfigPageState extends State<NotificationConfigPage> {
                                     child: Text(
                                       'Aktuelle Einstellung: $_advanceMinutes Minuten vor Unterrichtsbeginn',
                                       style: Theme.of(context).textTheme.bodyMedium,
+                                      softWrap: true,
+                                      overflow: TextOverflow.visible,
                                     ),
                                   ),
                                 ],
@@ -249,39 +278,95 @@ class _NotificationConfigPageState extends State<NotificationConfigPage> {
 
                   const SizedBox(height: 16),
 
-                  // Test Notification Card
-                  if (_agendaNotificationsEnabled || _gradeNotificationsEnabled || 
-                      _absenceNotificationsEnabled || _generalNotificationsEnabled)
+                  // Android Permission Info Card
+                  if (Theme.of(context).platform == TargetPlatform.android)
                     Card(
+                      color: Colors.orange.withOpacity(0.1),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Test',
-                              style: Theme.of(context).textTheme.titleLarge,
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Colors.orange[700],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Android Berechtigungen',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: Colors.orange[700],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                            
-                            ListTile(
-                              leading: const Icon(Icons.send_outlined),
-                              title: const Text('Test-Benachrichtigung senden'),
-                              subtitle: const Text('Prüfen Sie, ob Benachrichtigungen funktionieren'),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () async {
-                                try {
-                                  await PushNotificationService.showTestNotification();
-                                } catch (e) {
-                                  // Silently handle errors
-                                }
-                              },
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Für präzise Benachrichtigungen muss in den Android-Einstellungen die "Exakte Wecker"-Berechtigung aktiviert werden. '
+                              'Ohne diese Berechtigung können Benachrichtigungen mit Verzögerung ankommen.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.orange[800],
+                              ),
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
                             ),
                           ],
                         ),
                       ),
                     ),
+
+                  const SizedBox(height: 16),
+
+                  // Test Notification Card
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Test',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 16),
+
+                          ListTile(
+                            leading: const Icon(Icons.send_outlined),
+                            title: const Text('Test-Benachrichtigung senden'),
+                            subtitle: const Text('Prüfen Sie, ob Benachrichtigungen funktionieren'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () async {
+                              try {
+                                await PushNotificationService.showTestNotification();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Test-Benachrichtigung gesendet!'),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Fehler beim Senden: $e'),
+                                      duration: const Duration(seconds: 3),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                   const SizedBox(height: 50),
                 ],

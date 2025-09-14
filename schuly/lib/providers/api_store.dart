@@ -148,6 +148,10 @@ class ApiStore extends ChangeNotifier {
 
       // Clear current data and load cached data for new user
       _clearCurrentData();
+
+      // Cancel existing notifications before loading new user's data
+      await PushNotificationService.cancelAllNotifications();
+
       await loadAllFromCache();
 
       notifyListeners();
@@ -261,6 +265,15 @@ class ApiStore extends ChangeNotifier {
 
   Future<void> _cacheNotifications(List<Object> data) async {
     await StorageService.cacheData('notifications_${_activeUserEmail ?? 'default'}', data);
+  }
+
+  // Helper method to schedule agenda notifications
+  Future<void> _scheduleAgendaNotificationsIfEnabled(List<AgendaDto> agendaItems) async {
+    try {
+      await PushNotificationService.scheduleAgendaNotifications(agendaItems);
+    } catch (e) {
+      print('[_scheduleAgendaNotificationsIfEnabled] Error scheduling notifications: $e');
+    }
   }
 
   // Cache loading helper methods
@@ -490,6 +503,10 @@ class ApiStore extends ChangeNotifier {
       if (cachedData != null) {
         agenda = cachedData;
         lastApiError = null;
+
+        // Schedule notifications even for cached data to ensure they work offline
+        await _scheduleAgendaNotificationsIfEnabled(agenda!);
+
         notifyListeners();
         return;
       }
@@ -499,8 +516,8 @@ class ApiStore extends ChangeNotifier {
       agenda = await _apiService.getAgenda();
       if (agenda != null) {
         await _cacheAgenda(agenda!);
-        // Schedule push notifications for agenda items if PushAssist is enabled
-        await PushNotificationService.scheduleAgendaNotifications(agenda!);
+        // Schedule push notifications for agenda items
+        await _scheduleAgendaNotificationsIfEnabled(agenda!);
       }
       lastApiError = null;
     } on ApiException catch (e) {
@@ -510,6 +527,8 @@ class ApiStore extends ChangeNotifier {
         final cachedData = await _loadCachedAgenda();
         if (cachedData != null) {
           agenda = cachedData;
+          // Schedule notifications for fallback cached data
+          await _scheduleAgendaNotificationsIfEnabled(agenda!);
         }
       }
     }
@@ -767,6 +786,13 @@ class ApiStore extends ChangeNotifier {
   Future<void> refreshAll() async {
     if (_activeUserEmail != null && _users[_activeUserEmail] != null) {
       await fetchAll(forceRefresh: true);
+    }
+  }
+
+  // Reschedule all notifications from current cached agenda data
+  Future<void> rescheduleNotifications() async {
+    if (agenda != null && agenda!.isNotEmpty) {
+      await _scheduleAgendaNotificationsIfEnabled(agenda!);
     }
   }
 

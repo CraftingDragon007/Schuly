@@ -97,7 +97,21 @@ class PushNotificationService {
     if (!_initialized) await initialize();
 
     if (Platform.isAndroid) {
+      // Request basic notification permission
       final androidPermission = await Permission.notification.request();
+
+      // For Android 12+, also request exact alarm permission
+      if (androidPermission.isGranted) {
+        try {
+          final exactAlarmPermission = await Permission.scheduleExactAlarm.request();
+          if (!exactAlarmPermission.isGranted) {
+            debugPrint('⚠️ Exact alarm permission denied - notifications may be delayed');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Failed to request exact alarm permission: $e');
+        }
+      }
+
       return androidPermission.isGranted;
     } else if (Platform.isIOS) {
       final result = await _notifications
@@ -116,7 +130,19 @@ class PushNotificationService {
   // Check if permissions are granted
   static Future<bool> arePermissionsGranted() async {
     if (Platform.isAndroid) {
-      return await Permission.notification.isGranted;
+      final basicPermission = await Permission.notification.isGranted;
+
+      // Check exact alarm permission for Android 12+
+      try {
+        final exactAlarmPermission = await Permission.scheduleExactAlarm.isGranted;
+        if (!exactAlarmPermission) {
+          debugPrint('⚠️ Exact alarm permission not granted - notifications may be inexact');
+        }
+        return basicPermission; // Return basic permission status
+      } catch (e) {
+        debugPrint('⚠️ Could not check exact alarm permission: $e');
+        return basicPermission;
+      }
     } else if (Platform.isIOS) {
       final result = await _notifications
           .resolvePlatformSpecificImplementation<
@@ -203,56 +229,128 @@ class PushNotificationService {
     final title = 'Nächste Stunde: $subject';
     final body = 'Raum: $room${teacher.isNotEmpty ? ' • Lehrer: $teacher' : ''}';
 
-    await _notifications.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(notificationTime, tz.local),
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    try {
+      await _notifications.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(notificationTime, tz.local),
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
 
-    debugPrint('Scheduled notification for $subject at ${notificationTime.toString()}');
+      debugPrint('Scheduled notification for $subject at ${notificationTime.toString()}');
+    } catch (e) {
+      // If exact scheduling fails, try with inexact scheduling
+      if (e.toString().contains('exact_alarms_not_permitted')) {
+        debugPrint('⚠️ Exact alarms not permitted, trying inexact scheduling for $subject');
+        try {
+          await _notifications.zonedSchedule(
+            id,
+            title,
+            body,
+            tz.TZDateTime.from(notificationTime, tz.local),
+            notificationDetails,
+            androidScheduleMode: AndroidScheduleMode.alarmClock,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+          );
+          debugPrint('✅ Scheduled (inexact) notification for $subject');
+        } catch (e2) {
+          debugPrint('❌ Failed to schedule notification for $subject: $e2');
+          rethrow;
+        }
+      } else {
+        debugPrint('❌ Failed to schedule notification for $subject: $e');
+        rethrow;
+      }
+    }
   }
 
   // Schedule notifications for multiple agenda items
   static Future<void> scheduleAgendaNotifications(List<dynamic> agendaItems) async {
+    debugPrint('📅 Starting to schedule ${agendaItems.length} agenda notifications...');
+
     // Check if general notifications are enabled
-    if (!await StorageService.getPushNotificationsEnabled()) return;
-    
+    if (!await StorageService.getPushNotificationsEnabled()) {
+      debugPrint('⏭️ Push notifications disabled - skipping scheduling');
+      return;
+    }
+
     // Check if agenda notifications are specifically enabled
     final agendaEnabled = await StorageService.getNotificationEnabled('agenda') ?? true;
-    if (!agendaEnabled) return;
-    
+    if (!agendaEnabled) {
+      debugPrint('⏭️ Agenda notifications disabled - skipping scheduling');
+      return;
+    }
+
     // Cancel existing notifications first
     await cancelAllNotifications();
 
     int notificationId = 1000; // Start with a high number to avoid conflicts
+    int scheduledCount = 0;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
     for (final item in agendaItems) {
       try {
-        final startDateTime = DateTime.tryParse(item.startDate);
-        if (startDateTime == null) continue;
-
-        // Only schedule for today and future dates
-        final today = DateTime.now();
-        if (startDateTime.isBefore(DateTime(today.year, today.month, today.day))) {
+        final startDateStr = item.startDate?.toString() ?? '';
+        if (startDateStr.isEmpty) {
+          debugPrint('⚠️ Skipping agenda item with empty start date');
           continue;
         }
 
+        final startDateTime = DateTime.tryParse(startDateStr);
+        if (startDateTime == null) {
+          debugPrint('⚠️ Failed to parse date: $startDateStr');
+          continue;
+        }
+
+        // Only schedule for today and future dates
+        if (startDateTime.isBefore(today)) {
+          debugPrint('⏭️ Skipping past event: ${item.text} at $startDateStr');
+          continue;
+        }
+
+        // Get advance time from settings (default 2 minutes)
+        final advanceMinutes = await StorageService.getNotificationAdvanceMinutes() ?? 2;
+        final notificationTime = startDateTime.subtract(Duration(minutes: advanceMinutes));
+
+        // Don't schedule notifications for events that would notify in the past
+        if (notificationTime.isBefore(now)) {
+          debugPrint('⏭️ Notification time is in the past for: ${item.text}');
+          continue;
+        }
+
+        // Get teacher names if available
+        final teachers = item.teachers as List<dynamic>? ?? [];
+        final teacherStr = teachers.isNotEmpty ? teachers.first.toString() : '';
+
         await scheduleAgendaNotification(
           id: notificationId++,
-          subject: item.text ?? 'Unbekannt',
-          room: item.roomToken ?? 'Unbekannt',
-          teacher: '', // Teacher field doesn't exist in AgendaDto
+          subject: item.text?.toString() ?? 'Unbekannt',
+          room: item.roomToken?.toString() ?? 'Unbekannt',
+          teacher: teacherStr,
           startTime: startDateTime,
         );
+
+        scheduledCount++;
+        debugPrint('✅ Scheduled: ${item.text} at ${startDateTime.toString()}');
       } catch (e) {
-        debugPrint('Error scheduling notification for agenda item: $e');
+        // Continue with other notifications even if one fails
+        if (e.toString().contains('exact_alarms_not_permitted')) {
+          debugPrint('⚠️ Exact alarm permission issue for: ${item.text}');
+        } else {
+          debugPrint('❌ Error scheduling notification for agenda item: $e');
+          debugPrint('   Item data: ${item.toString()}');
+        }
       }
     }
+
+    debugPrint('🎯 Successfully scheduled $scheduledCount notifications out of ${agendaItems.length} agenda items');
   }
 
   // Cancel all notifications
