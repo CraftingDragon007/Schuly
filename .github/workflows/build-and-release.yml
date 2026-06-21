@@ -78,7 +78,8 @@ jobs:
             --build-number="${{ github.run_number }}" \
             --dart-define=SENTRY_DSN="$SENTRY_DSN" \
             --dart-define=SENTRY_RELEASE="${{ github.ref_name }}" \
-            --dart-define=SENTRY_ENVIRONMENT="production"
+            --dart-define=SENTRY_ENVIRONMENT="production" \
+            --dart-define=BACKEND_BASE_URL="https://schuly.gamepowerx.com"
 
       - name: Build Android AAB (App Bundle)
         working-directory: .
@@ -90,7 +91,8 @@ jobs:
             --build-number="${{ github.run_number }}" \
             --dart-define=SENTRY_DSN="$SENTRY_DSN" \
             --dart-define=SENTRY_RELEASE="${{ github.ref_name }}" \
-            --dart-define=SENTRY_ENVIRONMENT="production"
+            --dart-define=SENTRY_ENVIRONMENT="production" \
+            --dart-define=BACKEND_BASE_URL="https://schuly.gamepowerx.com"
 
       - name: Prepare artifacts
         working-directory: .
@@ -136,7 +138,8 @@ jobs:
             --build-number="${{ github.run_number }}" \
             --dart-define=SENTRY_DSN="$SENTRY_DSN" \
             --dart-define=SENTRY_RELEASE="${{ github.ref_name }}" \
-            --dart-define=SENTRY_ENVIRONMENT="production"
+            --dart-define=SENTRY_ENVIRONMENT="production" \
+            --dart-define=BACKEND_BASE_URL="https://schuly.gamepowerx.com"
 
       - name: Create iOS Archive
         working-directory: .
