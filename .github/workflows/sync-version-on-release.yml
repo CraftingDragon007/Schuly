@@ -16,7 +16,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout main
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: main
           token: ${{ secrets.MAIN_PUSH_TOKEN }}
