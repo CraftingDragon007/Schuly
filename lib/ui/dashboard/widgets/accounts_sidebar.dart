@@ -55,7 +55,13 @@ class AccountsSidebar extends StatelessWidget {
     if (confirmed != true) return;
     try {
       await ActiveAccountService.instance.removeSchool(school);
-    } catch (_) {/* keep the sheet open; list reflects whatever succeeded */}
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to disconnect school: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _add(BuildContext context) async {

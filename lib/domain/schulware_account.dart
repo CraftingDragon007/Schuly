@@ -14,6 +14,8 @@ class MySchool {
   final String provider; // 'schulnetz' | 'odaorg'
   /// The plugin account id backing this school (for triggering a sync).
   final String? pluginAccountId;
+  /// The backend SchoolUser id for this school (used for disconnect).
+  final String? schoolUserId;
   /// Backend-supplied, fully-resolved URLs (null if not provided).
   final String? logoUrl;
   final String? profilePictureUrl;
@@ -25,6 +27,7 @@ class MySchool {
     this.fullName,
     this.provider = 'schulnetz',
     this.pluginAccountId,
+    this.schoolUserId,
     this.logoUrl,
     this.profilePictureUrl,
   });
@@ -33,6 +36,7 @@ class MySchool {
     MySchoolDto dto, {
     String provider = 'schulnetz',
     String? pluginAccountId,
+    String? schoolUserId,
   }) =>
       MySchool(
         id: dto.id ?? '',
@@ -41,6 +45,7 @@ class MySchool {
         fullName: dto.fullName,
         provider: provider,
         pluginAccountId: pluginAccountId,
+        schoolUserId: schoolUserId,
         logoUrl: OidcConfig.resolveUrl(dto.logoUrl),
         profilePictureUrl: OidcConfig.resolveUrl(dto.profilePictureUrl),
       );

@@ -44,13 +44,15 @@ class ActiveAccountService extends ChangeNotifier {
       final data = res.data;
 
       final pluginBySchoolId = await _detectPluginAccounts();
+      final schoolUserIds = await _detectSchoolUserIds();
       _schools = data == null
           ? const []
           : data.map((dto) {
               final info = pluginBySchoolId[dto.id];
               return MySchool.fromDto(dto,
                   provider: info?.provider ?? 'schulnetz',
-                  pluginAccountId: info?.accountId);
+                  pluginAccountId: info?.accountId,
+                  schoolUserId: schoolUserIds[dto.id]);
             }).toList(growable: false);
 
       // Keep the persisted active id only if it still resolves to a school.
@@ -114,6 +116,24 @@ class ActiveAccountService extends ChangeNotifier {
     }
   }
 
+  /// Maps schoolId → SchoolUser id for the current user.
+  Future<Map<String, String>> _detectSchoolUserIds() async {
+    try {
+      final api = ApiClient.instance.api;
+      final me = await api.getAuthApi().apiAuthMeGet();
+      final appUserId = me.data?.id;
+      if (appUserId == null) return const {};
+      final usersRes =
+          await api.getSchoolUsersApi().apiSchoolUsersGet(applicationUserId: appUserId);
+      return {
+        for (final u in (usersRes.data ?? const <SchoolUserDto>[]))
+          if (u.id != null && u.schoolId != null) u.schoolId!: u.id!,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
   Future<void> setActive(String id) async {
     if (_activeId == id) return;
     _activeId = id;
@@ -122,16 +142,26 @@ class ActiveAccountService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Disconnects a connected school via its plugin's DELETE endpoint, then
-  /// reloads the account list (which reselects an active school).
+  /// Disconnects a connected school by deleting its plugin account (if any)
+  /// and then the backend SchoolUser, then reloads the account list.
   Future<void> removeSchool(MySchool school) async {
     final accountId = school.pluginAccountId;
-    if (accountId == null) return;
-    final accounts = ApiClient.instance.api.getAccountsApi();
-    if (school.provider == 'odaorg') {
-      await accounts.apiPluginsOdaorgAccountsAccountIdDelete(accountId: accountId);
-    } else {
-      await accounts.apiPluginsSchulwareAccountsAccountIdDelete(accountId: accountId);
+    if (accountId != null) {
+      final accounts = ApiClient.instance.api.getAccountsApi();
+      try {
+        if (school.provider == 'odaorg') {
+          await accounts.apiPluginsOdaorgAccountsAccountIdDelete(accountId: accountId);
+        } else {
+          await accounts.apiPluginsSchulwareAccountsAccountIdDelete(accountId: accountId);
+        }
+      } catch (_) {
+        // Best-effort: if the plugin account is already gone, continue.
+      }
+    }
+    final schoolUserId = school.schoolUserId;
+    if (schoolUserId != null) {
+      final schoolUsers = ApiClient.instance.api.getSchoolUsersApi();
+      await schoolUsers.apiSchoolUsersIdDelete(id: schoolUserId);
     }
     // If we removed the active school, drop the selection so refresh picks a new one.
     if (_activeId == school.id) {
