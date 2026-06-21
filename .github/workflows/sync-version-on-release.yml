@@ -23,8 +23,8 @@ jobs:
 
       - name: Configure git as the maintainer
         run: |
-          git config user.name "PianoNic"
-          git config user.email "79938743+PianoNic@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Compare versions and open + merge sync PR if different
         env:
