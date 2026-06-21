@@ -1,6 +1,6 @@
 class OidcConfig {
-  static const authority = 'https://auth.gaggao.com';
-  static const clientId = 'fe2e0db0-69e3-48e3-845c-561f7a36d280';
+  static const authority = 'https://auth.gamepowerx.com';
+  static const clientId = 'schuly-mobile';
   // `offline_access` is required for Pocket ID to issue a refresh token —
   // without it the silent token refresh has nothing to work with and the user
   // gets bounced to re-login the moment the access token expires.
@@ -24,7 +24,7 @@ class OidcConfig {
   );
 
   static const tokenEndpoint = '$authority/api/oidc/token';
-  static const authorizationEndpoint = '$authority/authorize';
+  static const authorizationEndpoint = '$authority/api/oidc/authorization';
 
   /// Resolves a backend-supplied URL: absolute (http…) is used as-is, a
   /// root-relative path (/api/avatars/…) is prefixed with [backendBaseUrl],
