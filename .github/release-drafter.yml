@@ -2,38 +2,56 @@
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 
-version-resolver:
-  major:
-    labels:
-      - 'major'
-      - 'breaking'
-  minor:
-    labels:
-      - 'feature'
-      - 'enhancement'
-      - 'minor'
-  patch:
-    labels:
-      - 'bug'
-      - 'bugfix'
-      - 'patch'
-      - 'hotfix'
-      - 'security'
-  default: patch
-
 categories:
+  - type: version-resolver
+    semver-increment: major
+    when:
+      labels:
+        - 'major'
+        - 'breaking'
+  - type: version-resolver
+    semver-increment: minor
+    when:
+      labels:
+        - 'feature'
+        - 'enhancement'
+        - 'minor'
+  - type: version-resolver
+    semver-increment: patch
+    when:
+      labels:
+        - 'bug'
+        - 'bugfix'
+        - 'patch'
+        - 'hotfix'
+        - 'security'
+  - type: version-resolver
+    semver-increment: patch
+  - type: pre-exclude
+    when:
+      labels:
+        - 'skip-changelog'
+        - 'dependencies'
   - title: '🚀 Features'
-    labels:
-      - 'feature'
+    type: changelog
+    when:
+      labels:
+        - 'feature'
   - title: '✨ Enhancements'
-    labels:
-      - 'enhancement'
+    type: changelog
+    when:
+      labels:
+        - 'enhancement'
   - title: '🛠️ Refactors'
-    labels:
-      - 'refactor'
+    type: changelog
+    when:
+      labels:
+        - 'refactor'
   - title: '🐛 Bug Fixes'
-    labels:
-      - 'bug'
+    type: changelog
+    when:
+      labels:
+        - 'bug'
 
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: '\<*_&`'
@@ -46,10 +64,6 @@ template: |
   $CHANGES
 
   **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
-
-exclude-labels:
-  - 'skip-changelog'
-  - 'dependencies'
 
 autolabeler:
   - label: 'feature'
