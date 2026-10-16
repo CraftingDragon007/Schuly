@@ -28,6 +28,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Configure Flutter Gradle plugin repositories
+        run: |
+          mkdir -p "$HOME/.gradle/init.d"
+          cp android/gradle/plugin-repositories.init.gradle \
+            "$HOME/.gradle/init.d/flutter-plugin-repositories.gradle"
+
       - name: Setup release keystore
         working-directory: ./android
         env:
