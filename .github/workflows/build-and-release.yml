@@ -144,9 +144,20 @@ jobs:
           fingerprint="$(awk -F': ' '/certificate SHA-256 digest/{gsub(/:/, "", $2); print toupper($2)}' apk-signature.txt)"
           expected_fingerprint="368F4D24D9AA0D8FDB243468CB8FE3A4D79681448C5397AFBDCEC2683D15E7C0"
           if [ "$fingerprint" != "$expected_fingerprint" ]; then
+            echo "Observed APK certificate SHA-256: ${fingerprint:-<unparsed>}"
+            echo "Expected APK certificate SHA-256: $expected_fingerprint"
             echo "Built APK is not signed with the published v2.7.1 certificate."
             exit 1
           fi
+
+      - name: Upload Android APK for signing diagnosis
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-signing-diagnosis
+          path: build/app/outputs/flutter-apk/app-prod-release.apk
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Prepare artifacts
         working-directory: .
