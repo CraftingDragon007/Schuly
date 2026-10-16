@@ -69,13 +69,31 @@ jobs:
         working-directory: .
         run: dart run flutter_launcher_icons
 
+      - name: Resolve numeric app version
+        id: app_version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            version="${RELEASE_TAG#v}"
+          else
+            version="$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+)(\+[0-9]+)?$/\1/p' pubspec.yaml)"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unable to resolve a numeric app version: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Build Android APK
         working-directory: .
         env:
           SENTRY_DSN: ${{ vars.SENTRY_URL }}
         run: |
           flutter build apk --release --flavor prod \
-            --build-name="${{ github.ref_name }}" \
+            --build-name="${{ steps.app_version.outputs.version }}" \
             --build-number="${{ github.run_number }}" \
             --dart-define=BACKEND_BASE_URL="https://schuly.gamepowerx.com" \
             --dart-define=SENTRY_DSN="$SENTRY_DSN" \
@@ -92,7 +110,7 @@ jobs:
           SENTRY_DSN: ${{ vars.SENTRY_URL }}
         run: |
           flutter build appbundle --release --flavor prod \
-            --build-name="${{ github.ref_name }}" \
+            --build-name="${{ steps.app_version.outputs.version }}" \
             --build-number="${{ github.run_number }}" \
             --dart-define=BACKEND_BASE_URL="https://schuly.gamepowerx.com" \
             --dart-define=SENTRY_DSN="$SENTRY_DSN" \
@@ -106,7 +124,17 @@ jobs:
       - name: Verify Android APK signing certificate
         run: |
           set -euo pipefail
-          apksigner verify --print-certs build/app/outputs/flutter-apk/app-prod-release.apk > apk-signature.txt
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$sdk_root" ] || [ ! -d "$sdk_root/build-tools" ]; then
+            echo "Android SDK build-tools directory was not found."
+            exit 1
+          fi
+          apksigner="$(find "$sdk_root/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner -perm -u+x | sort -V | tail -n 1)"
+          if [ -z "$apksigner" ]; then
+            echo "apksigner was not found under $sdk_root/build-tools."
+            exit 1
+          fi
+          "$apksigner" verify --print-certs build/app/outputs/flutter-apk/app-prod-release.apk > apk-signature.txt
           fingerprint="$(awk -F': ' '/certificate SHA-256 digest/{gsub(/:/, "", $2); print toupper($2)}' apk-signature.txt)"
           expected_fingerprint="368F4D24D9AA0D8FDB243468CB8FE3A4D79681448C5397AFBDCEC2683D15E7C0"
           if [ "$fingerprint" != "$expected_fingerprint" ]; then
@@ -148,13 +176,31 @@ jobs:
         working-directory: .
         run: dart run flutter_launcher_icons
 
+      - name: Resolve numeric app version
+        id: app_version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            version="${RELEASE_TAG#v}"
+          else
+            version="$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+)(\+[0-9]+)?$/\1/p' pubspec.yaml)"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unable to resolve a numeric app version: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Build iOS (unsigned)
         working-directory: .
         env:
           SENTRY_DSN: ${{ vars.SENTRY_URL }}
         run: |
           flutter build ios --release --no-codesign \
-            --build-name="${{ github.ref_name }}" \
+            --build-name="${{ steps.app_version.outputs.version }}" \
             --build-number="${{ github.run_number }}" \
             --dart-define=BACKEND_BASE_URL="https://schuly.gamepowerx.com" \
             --dart-define=SENTRY_DSN="$SENTRY_DSN" \
