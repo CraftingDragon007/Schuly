@@ -110,10 +110,9 @@ class AuthService {
 
   /// Runs the OIDC Authorization Code + PKCE flow in the system browser and
   /// exchanges the code for tokens. flutter_appauth applies PKCE (S256)
-  /// automatically. When [register] is true the authorize request carries
-  /// `prompt=create` (the OIDC registration hint) so Keycloak opens the
-  /// registration screen first.
-  static Future<AuthTokens> signIn({bool register = false}) async {
+  /// automatically. Account creation is offered by the identity provider's
+  /// hosted sign-in page when self-registration is enabled.
+  static Future<AuthTokens> signIn() async {
     final cfg = await OidcConfig.settings();
     if (!cfg.schemeIsRegistered) {
       throw Exception('This backend redirects to ${cfg.callbackScheme}://, which this app build cannot receive. Configure its redirect URI as ${OidcConfig.redirectScheme}://callback.');
@@ -124,7 +123,6 @@ class AuthService {
         cfg.redirectUri,
         serviceConfiguration: _serviceConfig(cfg),
         scopes: cfg.scopes,
-        promptValues: register ? const ['create'] : null,
         allowInsecureConnections: cfg.allowInsecureConnections,
       ),
     );

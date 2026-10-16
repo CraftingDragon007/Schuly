@@ -84,13 +84,13 @@ class _RootScreenState extends State<RootScreen> {
     if (token != null) unawaited(PushService.instance.onSignedIn());
   }
 
-  Future<void> _signIn({bool register = false}) async {
+  Future<void> _signIn() async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await AuthService.signIn(register: register);
+      await AuthService.signIn();
       await _refresh();
     } catch (e) {
       if (!mounted) return;
@@ -109,7 +109,7 @@ class _RootScreenState extends State<RootScreen> {
     await OnboardingService.markSeen();
     if (mounted) setState(() => _onboarded = true);
     await AppModeService.instance.setMode(AppMode.account);
-    await _signIn(register: true);
+    await _signIn();
   }
 
   Future<void> _onboardWithPrivate() async {
