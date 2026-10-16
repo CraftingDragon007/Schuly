@@ -30,7 +30,7 @@ bun run test              # flutter test
 
 Flavors: `dev` (`com.schuly.app.dev`, "Schuly DEV") and `prod` (`com.schuly.app`, "Schuly"). Targets Android and iOS only.
 
-The backend URL is compiled in via `--dart-define=BACKEND_BASE_URL` and defaults to `http://localhost:5033`, so no machine IP is ever committed. [Development setup](https://docs.schuly.dev/Schuly/setup/development) covers the full script list, the build variants, and pointing the app at a local backend over USB or LAN.
+The backend URL is compiled in via `--dart-define=BACKEND_BASE_URL` and defaults to `https://schuly.gamepowerx.com`. For local development, override it with your reachable backend URL. [Development setup](https://docs.schuly.dev/Schuly/setup/development) covers the full script list, build variants, and pointing the app at a local backend over USB or LAN.
 
 ## Documentation
 

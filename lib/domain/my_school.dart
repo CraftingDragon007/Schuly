@@ -10,6 +10,7 @@ class MySchool {
   final String provider;
   final String? pluginBasePath;
   final String? pluginAccountId;
+  final String? schoolUserId;
   final String? logoUrl;
   final String? profilePictureUrl;
 
@@ -21,6 +22,7 @@ class MySchool {
     this.provider = '',
     this.pluginBasePath,
     this.pluginAccountId,
+    this.schoolUserId,
     this.logoUrl,
     this.profilePictureUrl,
   });
@@ -30,6 +32,7 @@ class MySchool {
     String provider = '',
     String? pluginBasePath,
     String? pluginAccountId,
+    String? schoolUserId,
   }) =>
       MySchool(
         id: dto.id ?? '',
@@ -39,6 +42,7 @@ class MySchool {
         provider: provider,
         pluginBasePath: pluginBasePath,
         pluginAccountId: pluginAccountId,
+        schoolUserId: schoolUserId,
         logoUrl: OidcConfig.resolveUrl(dto.logoUrl),
         profilePictureUrl: OidcConfig.resolveUrl(dto.profilePictureUrl),
       );

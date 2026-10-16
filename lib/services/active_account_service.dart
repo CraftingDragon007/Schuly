@@ -56,6 +56,7 @@ class ActiveAccountService extends ChangeNotifier {
       final data = res.data;
 
       final pluginBySchoolId = await _detectPluginAccounts();
+      final schoolUserIds = await _detectSchoolUserIds();
       _schools = data == null
           ? const []
           : data.map((dto) {
@@ -63,7 +64,8 @@ class ActiveAccountService extends ChangeNotifier {
               return MySchool.fromDto(dto,
                   provider: info?.provider ?? '',
                   pluginBasePath: info?.pluginBasePath,
-                  pluginAccountId: info?.accountId);
+                  pluginAccountId: info?.accountId,
+                  schoolUserId: schoolUserIds[dto.id]);
             }).toList(growable: false);
 
       final prefs = await SharedPreferences.getInstance();
@@ -137,6 +139,26 @@ class ActiveAccountService extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, String>> _detectSchoolUserIds() async {
+    try {
+      final api = ApiClient.instance.api;
+      final me = await api.getAuthApi().apiAuthMeGet();
+      final applicationUserId = me.data?.id;
+      if (applicationUserId == null) return const {};
+
+      final users = await api
+          .getSchoolUsersApi()
+          .apiSchoolUsersGet(applicationUserId: applicationUserId);
+      return {
+        for (final user in (users.data ?? const <SchoolUserDto>[]))
+          if (user.id != null && user.schoolId != null) user.schoolId!: user.id!,
+      };
+    } catch (e, st) {
+      debugPrint('ActiveAccountService: school user detection failed: $e\n$st');
+      return const {};
+    }
+  }
+
   Future<void> setActive(String id) async {
     if (_activeId == id) return;
     _activeId = id;
@@ -150,19 +172,39 @@ class ActiveAccountService extends ChangeNotifier {
   Future<({String accountId, String basePath})?> resolvePluginTarget(MySchool school) async {
     final id = school.pluginAccountId;
     final base = school.pluginBasePath;
-    if (id != null && base != null && base.isNotEmpty) return (accountId: id, basePath: base);
+    if (id != null && base != null && base.isNotEmpty) {
+      return (accountId: id, basePath: base);
+    }
     final detected = (await _detectPluginAccounts())[school.id];
     final detectedBase = detected?.pluginBasePath;
-    if (detected == null || detectedBase == null || detectedBase.isEmpty) return null;
+    if (detected == null || detectedBase == null || detectedBase.isEmpty) {
+      return null;
+    }
     return (accountId: detected.accountId, basePath: detectedBase);
   }
 
   Future<void> removeSchool(MySchool school) async {
     final target = await resolvePluginTarget(school);
-    if (target == null) {
-      throw Exception('Could not resolve the connected account for ${school.name}. Check your connection and try again.');
+    final schoolUserId =
+        school.schoolUserId ?? (await _detectSchoolUserIds())[school.id];
+    if (schoolUserId == null) {
+      throw Exception('Could not resolve the school record for ${school.name}. Check your connection and try again.');
     }
-    await ApiClient.instance.dio.delete<dynamic>('${target.basePath}/accounts/${target.accountId}');
+
+    if (target != null) {
+      try {
+        await ApiClient.instance.dio.delete<dynamic>(
+          '${target.basePath}/accounts/${target.accountId}',
+        );
+      } catch (e, st) {
+        // The plugin account may already have been removed. Continue with the
+        // owning SchoolUser so the school is fully disconnected.
+        debugPrint('ActiveAccountService: plugin account removal failed: $e\n$st');
+      }
+    }
+    await ApiClient.instance.api
+        .getSchoolUsersApi()
+        .apiSchoolUsersIdDelete(id: schoolUserId);
     if (_activeId == school.id) {
       _activeId = null;
       final prefs = await SharedPreferences.getInstance();
